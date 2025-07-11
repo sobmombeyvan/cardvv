@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { CreditCard, Check, X, Eye, EyeOff, Search, Users, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import UserCard from "@/components/UserCard";
+import { supabase } from "@/integrations/supabase/client";
 
 interface CardData {
   id: string;
@@ -26,57 +27,59 @@ const Admin = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load all cards from localStorage (in real app this would be from admin database)
-    const savedCards = localStorage.getItem('userCards');
-    if (savedCards) {
-      setCards(JSON.parse(savedCards));
-    } else {
-      // Add some sample data for testing
-      const sampleCards: CardData[] = [
-        {
-          id: 'card_1',
-          cardNumber: '4111111111111111',
-          expiryDate: '12/25',
-          cvv: '123',
-          holderName: 'John Doe',
-          balance: 10,
-          status: 'pending' as const,
-          createdAt: new Date().toISOString(),
-          userId: 'user_1'
-        },
-        {
-          id: 'card_2',
-          cardNumber: '4222222222222222',
-          expiryDate: '01/26',
-          cvv: '456',
-          holderName: 'Jane Smith',
-          balance: 10,
-          status: 'validated' as const,
-          createdAt: new Date(Date.now() - 86400000).toISOString(),
-          userId: 'user_2'
-        }
-      ];
-      setCards(sampleCards);
-      localStorage.setItem('userCards', JSON.stringify(sampleCards));
-    }
+    // Fetch all cards from Supabase
+    const fetchCards = async () => {
+      const { data, error } = await supabase
+        .from('cards')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) {
+        toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+        return;
+      }
+      setCards(
+        (data || []).map(card => ({
+          id: card.id,
+          cardNumber: card.card_number,
+          expiryDate: card.expiry_date,
+          cvv: card.cvv,
+          holderName: card.holder_name,
+          balance: card.balance ?? 0,
+          status: card.status as 'pending' | 'validated' | 'unlocked' | 'blocked',
+          createdAt: card.created_at,
+          userId: card.user_id,
+        }))
+      );
+    };
+    fetchCards();
   }, []);
 
-  const handleValidateCard = (cardId: string) => {
-    const updatedCards = cards.map(card => 
-      card.id === cardId ? { ...card, status: 'validated' as const } : card
-    );
-    setCards(updatedCards);
-    localStorage.setItem('userCards', JSON.stringify(updatedCards));
+  const handleValidateCard = async (cardId: string) => {
+    const { error } = await supabase
+      .from('cards')
+      .update({ status: 'validated' })
+      .eq('id', cardId);
+    if (error) {
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setCards(cards => cards.map(card => card.id === cardId ? { ...card, status: 'validated' } : card));
     toast({
       title: "Carte validée",
       description: "La carte a été validée avec succès. L'utilisateur peut maintenant la débloquer.",
     });
   };
 
-  const handleRejectCard = (cardId: string) => {
-    const updatedCards = cards.filter(card => card.id !== cardId);
-    setCards(updatedCards);
-    localStorage.setItem('userCards', JSON.stringify(updatedCards));
+  const handleRejectCard = async (cardId: string) => {
+    const { error } = await supabase
+      .from('cards')
+      .delete()
+      .eq('id', cardId);
+    if (error) {
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setCards(cards => cards.filter(card => card.id !== cardId));
     toast({
       title: "Carte rejetée",
       description: "La carte a été supprimée du système.",
@@ -84,24 +87,32 @@ const Admin = () => {
     });
   };
 
-  const handleUnlockCard = (cardId: string) => {
-    const updatedCards = cards.map(card => 
-      card.id === cardId ? { ...card, status: 'unlocked' as const } : card
-    );
-    setCards(updatedCards);
-    localStorage.setItem('userCards', JSON.stringify(updatedCards));
+  const handleUnlockCard = async (cardId: string) => {
+    const { error } = await supabase
+      .from('cards')
+      .update({ status: 'unlocked' })
+      .eq('id', cardId);
+    if (error) {
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setCards(cards => cards.map(card => card.id === cardId ? { ...card, status: 'unlocked' } : card));
     toast({
       title: "Carte activée et 10$ débloqués",
       description: "La carte a été activée avec succès et 10$ ont été débloqués. L'utilisateur peut maintenant l'utiliser.",
     });
   };
 
-  const handleBlockCard = (cardId: string) => {
-    const updatedCards = cards.map(card => 
-      card.id === cardId ? { ...card, status: 'blocked' as const } : card
-    );
-    setCards(updatedCards);
-    localStorage.setItem('userCards', JSON.stringify(updatedCards));
+  const handleBlockCard = async (cardId: string) => {
+    const { error } = await supabase
+      .from('cards')
+      .update({ status: 'blocked' })
+      .eq('id', cardId);
+    if (error) {
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setCards(cards => cards.map(card => card.id === cardId ? { ...card, status: 'blocked' } : card));
     toast({
       title: "Carte bloquée",
       description: "La carte a été bloquée avec succès. L'utilisateur ne peut plus l'utiliser.",
@@ -109,27 +120,72 @@ const Admin = () => {
     });
   };
 
-  const handleUnblockCard = (cardId: string) => {
-    const updatedCards = cards.map(card => 
-      card.id === cardId ? { ...card, status: 'unlocked' as const } : card
-    );
-    setCards(updatedCards);
-    localStorage.setItem('userCards', JSON.stringify(updatedCards));
+  const handleUnblockCard = async (cardId: string) => {
+    const { error } = await supabase
+      .from('cards')
+      .update({ status: 'unlocked' })
+      .eq('id', cardId);
+    if (error) {
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setCards(cards => cards.map(card => card.id === cardId ? { ...card, status: 'unlocked' } : card));
     toast({
       title: "Carte débloquée",
       description: "La carte a été débloquée avec succès. L'utilisateur peut maintenant l'utiliser.",
     });
   };
 
-  const handleDeleteCard = (cardId: string) => {
-    const updatedCards = cards.filter(card => card.id !== cardId);
-    setCards(updatedCards);
-    localStorage.setItem('userCards', JSON.stringify(updatedCards));
+  const handleDeleteCard = async (cardId: string) => {
+    const { error } = await supabase
+      .from('cards')
+      .delete()
+      .eq('id', cardId);
+    if (error) {
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setCards(cards => cards.filter(card => card.id !== cardId));
     toast({
       title: "Carte supprimée",
       description: "La carte a été définitivement supprimée du système.",
       variant: "destructive",
     });
+  };
+
+  // Admin-only: Add demo cards to Supabase
+  const handleAddDemoCard = async () => {
+    const demoCard = {
+      card_number: '5555555555555555',
+      expiry_date: '12/25',
+      cvv: '789',
+      holder_name: 'Test User',
+      balance: 10,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      user_id: 'test_user',
+    };
+    const { error } = await supabase.from('cards').insert([demoCard]);
+    if (error) {
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+      return;
+    }
+    // Refetch cards
+    const { data } = await supabase.from('cards').select('*').order('created_at', { ascending: false });
+    setCards(
+      (data || []).map(card => ({
+        id: card.id,
+        cardNumber: card.card_number,
+        expiryDate: card.expiry_date,
+        cvv: card.cvv,
+        holderName: card.holder_name,
+        balance: card.balance ?? 0,
+        status: card.status as 'pending' | 'validated' | 'unlocked' | 'blocked',
+        createdAt: card.created_at,
+        userId: card.user_id,
+      }))
+    );
+    toast({ title: 'Carte de test ajoutée', description: 'Une nouvelle carte de test a été ajoutée pour démonstration.' });
   };
 
   const toggleCardDetails = (cardId: string) => {

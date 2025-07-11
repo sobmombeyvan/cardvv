@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import UserCard from "@/components/UserCard";
 import CreateCardModal from "@/components/CreateCardModal";
+import { supabase } from "@/integrations/supabase/client";
 
 interface CardData {
   id: string;
@@ -29,12 +30,33 @@ const Dashboard = () => {
   const { user, isAdmin, signOut } = useAuth();
 
   useEffect(() => {
-    // Load cards from localStorage (in real app this would be from database)
-    const savedCards = localStorage.getItem('userCards');
-    if (savedCards) {
-      const allCards: CardData[] = JSON.parse(savedCards);
-      setCards(allCards.filter(card => card.userId === user?.id));
-    }
+    if (!user) return;
+    // Fetch cards from Supabase for the current user
+    const fetchCards = async () => {
+      const { data, error } = await supabase
+        .from('cards')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (error) {
+        toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+        return;
+      }
+      setCards(
+        (data || []).map(card => ({
+          id: card.id,
+          cardNumber: card.card_number,
+          expiryDate: card.expiry_date,
+          cvv: card.cvv,
+          holderName: card.holder_name,
+          balance: card.balance ?? 0,
+          status: card.status as 'pending' | 'validated' | 'unlocked' | 'blocked',
+          createdAt: card.created_at,
+          userId: card.user_id,
+        }))
+      );
+    };
+    fetchCards();
   }, [user]);
 
   const handleLogout = async () => {
@@ -42,14 +64,45 @@ const Dashboard = () => {
     navigate('/auth');
   };
 
-  const handleCardCreated = (newCard: CardData) => {
-    // Ajoute la carte à toutes les cartes du localStorage
-    const savedCards = localStorage.getItem('userCards');
-    const allCards: CardData[] = savedCards ? JSON.parse(savedCards) : [];
-    const updatedAllCards = [...allCards, newCard];
-    localStorage.setItem('userCards', JSON.stringify(updatedAllCards));
-    // Mets à jour l'état local avec les cartes de l'utilisateur connecté
-    setCards(updatedAllCards.filter(card => card.userId === user?.id));
+  const handleCardCreated = async (newCard: CardData) => {
+    // Insert new card into Supabase
+    const { data, error } = await supabase.from('cards').insert([
+      {
+        card_number: newCard.cardNumber,
+        expiry_date: newCard.expiryDate,
+        cvv: newCard.cvv,
+        holder_name: newCard.holderName,
+        balance: newCard.balance,
+        status: newCard.status,
+        created_at: newCard.createdAt,
+        user_id: newCard.userId,
+      },
+    ]).select();
+    if (error) {
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+      return;
+    }
+    // Refetch cards
+    if (user) {
+      const { data: cardsData } = await supabase
+        .from('cards')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      setCards(
+        (cardsData || []).map(card => ({
+          id: card.id,
+          cardNumber: card.card_number,
+          expiryDate: card.expiry_date,
+          cvv: card.cvv,
+          holderName: card.holder_name,
+          balance: card.balance ?? 0,
+          status: card.status as 'pending' | 'validated' | 'unlocked' | 'blocked',
+          createdAt: card.created_at,
+          userId: card.user_id,
+        }))
+      );
+    }
     toast({
       title: "Carte créée avec succès !",
       description: "Votre carte est en attente de validation par l'administrateur.",

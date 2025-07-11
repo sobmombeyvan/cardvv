@@ -13,6 +13,7 @@ import { CreditCard, User, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generateCardDetails } from "@/utils/cardGenerator";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 interface CardData {
   id: string;
@@ -54,40 +55,36 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({ isOpen, onClose, onCa
     window.open('https://checkout.fapshi.com/link/23591742', '_blank');
     
     // Simulate payment processing
-    setTimeout(() => {
+    setTimeout(async () => {
       // Generate card details
       const cardDetails = generateCardDetails();
-      const newCard: CardData & { userId: string } = {
-        id: `card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        cardNumber: cardDetails.cardNumber.replace(/\s/g, ''),
-        expiryDate: cardDetails.expiryDate,
+      const newCard = {
+        card_number: cardDetails.cardNumber.replace(/\s/g, ''),
+        expiry_date: cardDetails.expiryDate,
         cvv: cardDetails.cvv,
-        holderName: name.trim(),
+        holder_name: name.trim(),
         balance: 10, // Free $10 credit
         status: 'pending',
-        createdAt: new Date().toISOString(),
-        userId: user?.id || '',
+        created_at: new Date().toISOString(),
+        user_id: user?.id || '',
       };
-
-      // Call parent callback if provided
-      if (onCardCreated) {
-        onCardCreated(newCard);
+      // Insert new card into Supabase
+      const { error } = await supabase.from('cards').insert([newCard]);
+      if (error) {
+        toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
+        setIsLoading(false);
+        return;
       }
-
-      // Show payment confirmation message with WhatsApp redirect
       toast({
         title: "Paiement effectué !",
         description: "Carte créée ! Envoyez votre capture de paiement sur WhatsApp pour activation.",
       });
-
-      // Redirect to WhatsApp after a short delay
       setTimeout(() => {
         const whatsappMessage = encodeURIComponent(
           `Bonjour, je viens d'effectuer le paiement de 1000 FCFA pour ma carte bancaire virtuelle. Voici ma capture de paiement.`
         );
         window.open(`https://wa.me/237679763835?text=${whatsappMessage}`, '_blank');
       }, 3000);
-      
       setName('');
       setIsLoading(false);
       onClose();
